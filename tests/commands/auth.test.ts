@@ -66,6 +66,7 @@ function setup(argv: string[]) {
     password: vi.fn(async () => ({ kind: "authenticated", session })),
     otp: vi.fn(async () => session),
     config: vi.fn(async () => ({})),
+    cliOAuthApplication: vi.fn(async () => ({ id: "cli", name: "Cloudreve CLI" })),
     exchangeOAuthToken: vi.fn(async () => ({
       access_token: "access",
       refresh_token: "refresh",
@@ -305,13 +306,12 @@ it("combines login capability inspection with server info and rejects stray brow
   });
 
   for (const options of [
-    ["--authorize-url", "https://example.test"],
     ["--browser-command", "browser"],
     ["--timeout", "1000"],
   ]) {
-    const y = context(["auth", "login", ...options]);
+    const y = context(["auth", "login", "--email", "a@example.test", ...options]);
 
-    await expect(auth(y.c)).rejects.toThrow("--browser");
+    await expect(auth(y.c)).rejects.toThrow("browser login");
     expect(y.raw.io.input).not.toHaveBeenCalled();
     expect(y.raw.browserLogin).not.toHaveBeenCalled();
   }
@@ -428,4 +428,65 @@ it("switches only authenticated saved accounts and logs out only the named accou
   await expect(auth(context(["auth", "logout", "missing"]).c)).rejects.toThrow(
     "Unknown saved account",
   );
+});
+
+it("defaults to built-in browser login with an assigned loopback redirect", async () => {
+  const x = setup(["auth", "login"]);
+  const redirectUri = "http://127.0.0.1:49123/callback";
+
+  x.raw.browserLogin.mockImplementation(async (options: any) => {
+    expect(options.redirectUri).toBe("http://127.0.0.1:0/callback");
+
+    const url = new URL(
+      await options.authorizeUrl({ state: "state", challenge: "a".repeat(43), redirectUri }),
+    );
+
+    expect(url.searchParams.get("redirect_uri")).toBe(redirectUri);
+
+    return { code: "code", verifier: "verifier", redirectUri };
+  });
+
+  await auth(x.c);
+  expect(x.a.cliOAuthApplication).toHaveBeenCalled();
+
+  expect(x.a.exchangeOAuthToken).toHaveBeenCalledWith(
+    expect.objectContaining({ code: "code", codeVerifier: "verifier", redirectUri }),
+    x.c.signal,
+  );
+
+  expect(x.raw.signInOAuth).toHaveBeenCalled();
+
+  const unavailable = setup(["auth", "login"]);
+
+  unavailable.a.cliOAuthApplication.mockRejectedValue(new Error("Built-in CLI OAuth unavailable"));
+  await expect(auth(unavailable.c)).rejects.toThrow("unavailable");
+  expect(unavailable.raw.browserLogin).not.toHaveBeenCalled();
+
+  await expect(auth(setup(["auth", "login", "--browser", "--secrets-stdin"]).c)).rejects.toThrow(
+    "does not require",
+  );
+});
+
+it("explains CAPTCHA limitations before asking for a password", async () => {
+  const x = setup(["auth", "login", "--email", "a@example.test"]);
+
+  x.a.config.mockResolvedValue({ login_captcha: true });
+  await expect(auth(x.c)).rejects.toThrow("cannot solve");
+  expect(x.raw.io.secret).not.toHaveBeenCalled();
+  expect(x.a.password).not.toHaveBeenCalled();
+
+  const y = setup(["auth", "login", "--email", "a@example.test", "--secrets-stdin"]);
+
+  y.a.config.mockResolvedValue({ login_captcha: true });
+
+  y.raw.io.input.mockResolvedValue(
+    Buffer.from(JSON.stringify({ password: "pass", captcha: "answer", ticket: "ticket" })),
+  );
+
+  await auth(y.c);
+
+  expect(y.a.password).toHaveBeenCalledWith("a@example.test", "pass", {
+    captcha: "answer",
+    ticket: "ticket",
+  });
 });

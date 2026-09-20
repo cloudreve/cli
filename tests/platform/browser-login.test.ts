@@ -230,7 +230,7 @@ it("refuses unsafe redirect targets, invalid deadlines and pre-cancelled work", 
     "https://127.0.0.1:1234/cb",
     "http://evil.test:1234/cb",
     "http://localhost/cb",
-    "http://localhost:0/cb",
+    "http://0.0.0.0:0/cb",
     "http://user@localhost:1234/cb",
     "http://:pass@localhost:1234/cb",
     "http://localhost:1234/cb#fragment",
@@ -385,4 +385,21 @@ it("preserves the exact registered redirect literal through the transaction", as
   });
 
   expect(result.redirectUri).toBe(uri);
+});
+
+it("binds an ephemeral loopback port before constructing authorization and releases it afterward", async () => {
+  let target: URL | undefined;
+
+  const result = await browserLogin(
+    options("http://127.0.0.1:0/callback", async (authorization) => {
+      target = callback(authorization);
+      expect(Number(target.port)).toBeGreaterThan(0);
+      expect(target.hostname).toBe("127.0.0.1");
+      expect(await send(target)).toBe(200);
+    }),
+  );
+
+  expect(result.redirectUri).toBe(`http://127.0.0.1:${target!.port}/callback`);
+  expect(result.code).toBe("fixture-code");
+  await expect(send(target!)).rejects.toThrow();
 });

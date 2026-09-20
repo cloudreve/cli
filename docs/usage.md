@@ -50,6 +50,30 @@ directory and transfer checkpoints. There is no automatic plaintext fallback.
 Passwords and other secrets are never ordinary command arguments. Login also accepts
 `--password-stdin`, `--credential-stdin`, or `--secrets-stdin` for explicit piped input.
 
+## Browser sign-in
+
+```sh
+cr auth login --server https://cloud.example
+cr auth login --server https://cloud.example --no-open
+```
+
+Browser OAuth is the default. A temporary listener binds to a random port on `127.0.0.1`.
+The browser returns an authorization code and state to that listener; tokens are exchanged
+through the CLI's connection to the server. The listener closes after success, denial,
+cancellation, or timeout. Incomplete login never saves credentials.
+
+`--no-open` prints the authorization URL for a browser on the same computer. `--timeout`
+sets the callback deadline in milliseconds. The default built-in login deadline is ten minutes.
+
+The server must have the built-in Cloudreve CLI OAuth application enabled and support loopback
+redirect ports. Generic OAuth exists from Cloudreve 4.12.0; the CLI otherwise requires 4.17.0
+or later. Built-in application availability is checked directly. Custom registered loopback
+clients remain supported through `--authorize-url` and a client secret in `--secrets-stdin`.
+
+Password sign-in supports email/password and OTP. CAPTCHA cannot be solved interactively in
+the terminal; it needs a supplied answer (and ticket when required) via `--secrets-stdin`, or
+browser sign-in.
+
 ## Automation
 
 ```sh

@@ -39,6 +39,9 @@ it("runs Commander login and file commands through real SDK HTTP with separate t
   };
 
   const server = setupServer(
+    http.get("https://cloudreve.test/api/v4/site/config/:section", () =>
+      HttpResponse.json({ code: 0, data: { login_captcha: false } }),
+    ),
     http.get("https://cloudreve.test/api/v4/site/ping", () =>
       HttpResponse.json({ code: 0, data: "4.19.0-alpha.1-pro" }),
     ),

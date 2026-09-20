@@ -5,7 +5,7 @@
     "": {
       "name": "cloudreve-cli",
       "dependencies": {
-        "@cloudreve/sdk": "https://github.com/cloudreve/sdk/releases/download/v1.0.0/cloudreve-sdk-1.0.0.tgz",
+        "@cloudreve/sdk": "https://github.com/cloudreve/sdk/releases/download/v1.1.0/cloudreve-sdk-1.1.0.tgz",
         "@commander-js/extra-typings": "15.0.0",
         "@inquirer/prompts": "8.7.2",
         "commander": "15.0.0",
@@ -119,7 +119,7 @@
 
     "@cloudreve/quality": ["@cloudreve/quality@https://github.com/cloudreve/foundation/releases/download/v1.0.0/cloudreve-quality-1.0.0.tgz", { "dependencies": { "@eslint/js": "9.39.5", "@stylistic/eslint-plugin": "5.10.0", "eslint": "9.39.5", "globals": "17.12.0", "typescript-eslint": "8.69.0" }, "peerDependencies": { "typescript": ">=6.0.3 <7" } }, "sha512-AYsc178UhBk+71V4uL5S/gbEa5C9ZoA2ch7J82lMLuiyZdLFrdquexZR+6qF1oq5PaoT67REfbv3KKkjXQOOkA=="],
 
-    "@cloudreve/sdk": ["@cloudreve/sdk@https://github.com/cloudreve/sdk/releases/download/v1.0.0/cloudreve-sdk-1.0.0.tgz", { "dependencies": { "semver": "7.7.4", "valibot": "1.5.0" } }, "sha512-NIH/fZmXibeGYXSViwCSideyAHOt8rFSLlh78oLCnDDSke94Z5Q4VYkSBIoTC0KrZ9UqP3NCho9dkM1Ha+TNDg=="],
+    "@cloudreve/sdk": ["@cloudreve/sdk@https://github.com/cloudreve/sdk/releases/download/v1.1.0/cloudreve-sdk-1.1.0.tgz", { "dependencies": { "semver": "7.7.4", "valibot": "1.5.0" } }, "sha512-5rsZ6BCUf2hfVCb28gyoOmwbZdXjKGC+XrUMy1d/4agOyb8sC0zu3/WjQzAw8brg95NPXEuvdSr3YOar2EE21A=="],
 
     "@cloudreve/testkit": ["@cloudreve/testkit@https://github.com/cloudreve/foundation/releases/download/v1.0.0/cloudreve-testkit-1.0.0.tgz", { "dependencies": { "get-port": "7.2.0", "proper-lockfile": "4.1.2", "testcontainers": "12.1.0", "valibot": "1.5.0", "write-file-atomic": "7.0.1" } }, "sha512-ESCC99kHX12EpI6Ou6rjNmZwmQtGx/S4pFEJilaL9QyVGO5smZGd/VOffVWzfAJa+rUs0uo59amf60YKh7nujQ=="],
 

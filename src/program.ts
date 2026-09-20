@@ -294,13 +294,19 @@ export function createProgram(
         "Credential storage for a new account: keychain, native or file",
       )
       .addOption(
-        new Option("--browser", "Use a registered loopback browser login").conflicts([
+        new Option("--browser", "Use browser OAuth (the default login method)").conflicts([
           "passwordStdin",
           "credentialStdin",
           "email",
         ]),
       )
-      .option("--authorize-url <url>", "Registered OAuth authorization URL")
+      .option("--no-open", "Print the OAuth URL for a browser on this computer")
+      .addOption(
+        new Option(
+          "--authorize-url <url>",
+          "Custom registered loopback OAuth authorization URL",
+        ).conflicts(["email", "passwordStdin", "credentialStdin"]),
+      )
       .option("--browser-command <executable>", "Custom browser executable")
       .option("--timeout <milliseconds>", "Browser callback timeout", integer)
       .option("--email <email>", "Account email")

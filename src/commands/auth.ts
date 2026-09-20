@@ -1,4 +1,6 @@
 import {
+  CLI_OAUTH_CLIENT,
+  createCliOAuthAuthorizationUrl,
   type PasswordLoginResponse,
   parseCredentialLink,
   validateServerVersion,
@@ -246,12 +248,18 @@ export async function authLogout(c: Context) {
 export async function authLogin(c: Context) {
   await c.ensureSupported();
 
-  if (c.inv.flags.browser) {
+  const passwordInput =
+    c.inv.flags.email ||
+    c.inv.flags["password-stdin"] ||
+    c.inv.flags["credential-stdin"] ||
+    c.inv.flags["secrets-stdin"];
+
+  if (c.inv.flags.browser || c.inv.flags["authorize-url"] || !passwordInput) {
     return authBrowser(c);
   }
 
-  if (c.inv.flags["authorize-url"] || c.inv.flags["browser-command"] || c.inv.flags.timeout) {
-    throw new CliError("usage", "Browser options require auth login --browser");
+  if (c.inv.flags["browser-command"] || c.inv.flags.timeout || c.inv.flags.open === false) {
+    throw new CliError("usage", "Browser options require browser login");
   }
 
   const p = c.connection();
@@ -271,6 +279,15 @@ export async function authLogin(c: Context) {
     session = await a.importRefreshToken(link.refreshToken);
   } else {
     const email = flag(inv, "email");
+
+    const config = await a.config(c.signal);
+
+    if (config.login_captcha && !supplied.captcha) {
+      throw new CliError(
+        "capability",
+        "Password login cannot solve this server's CAPTCHA. Use cr auth login --browser, or supply a CAPTCHA response with --secrets-stdin.",
+      );
+    }
 
     const password = inv.flags["password-stdin"]
       ? (await c.io.input(1024)).toString().replace(/\r?\n$/, "")
@@ -316,6 +333,42 @@ export async function serverInfo(c: Context) {
 }
 
 async function authBrowser(c: Context) {
+  if (!c.inv.flags["authorize-url"]) {
+    if (c.inv.flags["secrets-stdin"]) {
+      throw new CliError("usage", "Built-in browser login does not require a client secret");
+    }
+
+    const authentication = c.auth(c.connection());
+
+    await authentication.cliOAuthApplication(c.signal);
+
+    const redirect = new URL(CLI_OAUTH_CLIENT.redirectUri);
+
+    redirect.port = "0";
+
+    const callback = await c.browserLogin(
+      {
+        redirectUri: redirect.href,
+        timeoutMs: numberFlag(c.inv, "timeout") ?? 600_000,
+        authorizeUrl: (proof) => createCliOAuthAuthorizationUrl(c.connection().endpoint, proof),
+      },
+      c.inv.flags["browser-command"] as string | undefined,
+    );
+
+    const token = await authentication.exchangeOAuthToken(
+      {
+        clientId: CLI_OAUTH_CLIENT.clientId,
+        clientSecret: CLI_OAUTH_CLIENT.clientSecret,
+        code: callback.code,
+        redirectUri: callback.redirectUri,
+        codeVerifier: callback.verifier,
+      },
+      c.signal,
+    );
+
+    return { profile: c.name, account: await c.signInOAuth(token, CLI_OAUTH_CLIENT.clientId) };
+  }
+
   const supplied = await secrets(c);
 
   if (!supplied.clientSecret) {

@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { CliError } from "../output/errors.js";
 
@@ -32,7 +33,6 @@ export async function browserLogin(
     redirect.protocol !== "http:" ||
     !["127.0.0.1", "localhost", "[::1]"].includes(redirect.hostname) ||
     !redirect.port ||
-    Number(redirect.port) === 0 ||
     redirect.username ||
     redirect.password ||
     redirect.hash ||
@@ -43,6 +43,8 @@ export async function browserLogin(
       "Provide a registered loopback HTTP redirect URI without credentials, fragments or OAuth result parameters",
     );
   }
+
+  let redirectUri = options.redirectUri;
 
   const timeout = options.timeoutMs ?? 120_000;
 
@@ -158,7 +160,7 @@ export async function browserLogin(
 
       settled = true;
       response.end("Sign-in received. Return to your terminal.");
-      resolve({ code, verifier, redirectUri: options.redirectUri });
+      resolve({ code, verifier, redirectUri });
     },
   );
 
@@ -182,12 +184,17 @@ export async function browserLogin(
           return;
         }
 
+        if (redirect.port === "0") {
+          redirect.port = String((server.address() as AddressInfo).port);
+          redirectUri = redirect.href;
+        }
+
         void (async () => {
           const target = new URL(
             await options.authorizeUrl({
               state,
               challenge,
-              redirectUri: options.redirectUri,
+              redirectUri,
             }),
           );
 
@@ -202,7 +209,7 @@ export async function browserLogin(
             target.searchParams.get("state") !== state ||
             target.searchParams.get("code_challenge") !== challenge ||
             target.searchParams.get("code_challenge_method") !== "S256" ||
-            target.searchParams.get("redirect_uri") !== options.redirectUri
+            target.searchParams.get("redirect_uri") !== redirectUri
           ) {
             throw new CliError("usage", "Authorization URL does not bind the browser transaction");
           }

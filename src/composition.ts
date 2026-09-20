@@ -429,7 +429,13 @@ export async function compose(
       browserLogin({
         ...options,
         signal,
-        open: (url) => openBrowser(url, signal, browser),
+        open: async (url) => {
+          await io.diagnostic(`Authorize in a browser on this computer:\n${url}\n`);
+
+          if (inv.flags.open !== false) {
+            await openBrowser(url, signal, browser);
+          }
+        },
       }),
     logout,
     captureLogout,

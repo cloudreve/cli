@@ -35,6 +35,8 @@ export async function verifyBinary(executable, version) {
 
     if (url.pathname === "/api/v4/site/ping") {
       data = "4.18.0";
+    } else if (["/api/v4/site/config/basic", "/api/v4/site/config/login"].includes(url.pathname)) {
+      data = { login_captcha: false };
     } else if (url.pathname === "/api/v4/session/prepare") {
       data = { password_enabled: true };
     } else if (url.pathname === "/api/v4/session/token" && request.method === "POST") {

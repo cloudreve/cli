@@ -50,7 +50,7 @@
     "vitest": "4.1.11"
   },
   "dependencies": {
-    "@cloudreve/sdk": "https://github.com/cloudreve/sdk/releases/download/v1.0.0/cloudreve-sdk-1.0.0.tgz",
+    "@cloudreve/sdk": "https://github.com/cloudreve/sdk/releases/download/v1.1.0/cloudreve-sdk-1.1.0.tgz",
     "@commander-js/extra-typings": "15.0.0",
     "@inquirer/prompts": "8.7.2",
     "commander": "15.0.0",
