@@ -12,8 +12,14 @@ import { credentialGenerationKey } from "../../src/platform/session-store.js";
 import { Credentials, accountKey } from "../../src/platform/credentials.js";
 import type { Terminal } from "../../src/platform/terminal.js";
 
-it("keeps status and durable local sign-out/removal available offline and outside compatibility", async () => {
-  let version = "4.16.1";
+it.each([
+  ["4.16.1", false],
+  ["4.16.1", true],
+  ["5.0.0", false],
+  ["5.0.0", true],
+  ["offline", false],
+  ["offline", true],
+] as const)("keeps local sign-out available for server %s (remove=%s)", async (version, remove) => {
   let probes = 0;
   let mutations = 0;
 
@@ -35,114 +41,105 @@ it("keeps status and durable local sign-out/removal available offline and outsid
   server.listen({ onUnhandledRequest: "error" });
 
   try {
-    for (version of ["4.16.1", "5.0.0", "offline"]) {
-      for (const remove of [false, true]) {
-        const directory = await mkdtemp(join(tmpdir(), "cr-local-session-"));
-        const state = new State(directory);
+    const directory = await mkdtemp(join(tmpdir(), "cr-local-session-"));
+    const state = new State(directory);
 
-        await state.write("config.json", {
-          version: 1,
-          selected: "p",
-          profiles: {
-            p: {
-              id: "stable",
-              endpoint: "https://cleanup.test",
-              accountId: "a",
-              credentialStore: "file",
-            },
-          },
-        });
+    await state.write("config.json", {
+      version: 1,
+      selected: "p",
+      profiles: {
+        p: {
+          id: "stable",
+          endpoint: "https://cleanup.test",
+          accountId: "a",
+          credentialStore: "file",
+        },
+      },
+    });
 
-        await new Credentials(state).save("p", "file", {
-          accessToken: "private-access",
-          refreshToken: "private-refresh",
-          accessExpiresAt: Date.now() + 60000,
-          refreshExpiresAt: Date.now() + 600000,
-        });
+    await new Credentials(state).save("p", "file", {
+      accessToken: "private-access",
+      refreshToken: "private-refresh",
+      accessExpiresAt: Date.now() + 60000,
+      refreshExpiresAt: Date.now() + 600000,
+    });
 
-        let output = "";
+    let output = "";
 
-        const io: Terminal = {
-          write: async (value) => {
-            output += String(value);
-          },
-          diagnostic: async () => {},
-          input: async () => {
-            throw Error("unexpected stdin");
-          },
-          secret: async () => {
-            throw Error("unexpected prompt");
-          },
-          confirm: async () => true,
-        };
+    const io: Terminal = {
+      write: async (value) => {
+        output += String(value);
+      },
+      diagnostic: async () => {},
+      input: async () => {
+        throw Error("unexpected stdin");
+      },
+      secret: async () => {
+        throw Error("unexpected prompt");
+      },
+      confirm: async () => true,
+    };
 
-        const create = (args: string[]) =>
-          compose(
-            parse([...args, "--config-dir", directory, "--json"]),
-            io,
-            new AbortController().signal,
-          );
+    const create = (args: string[]) =>
+      compose(
+        parse([...args, "--config-dir", directory, "--json"]),
+        io,
+        new AbortController().signal,
+      );
 
-        const status = await create(["auth", "status"]);
-        const before = probes;
+    const status = await create(["auth", "status"]);
+    const before = probes;
 
-        try {
-          await dispatch(status);
-          expect(JSON.parse(output).data.authenticated).toBe(true);
-          expect(probes).toBe(before);
-          expect(output).not.toContain("private-");
-        } finally {
-          await status.dispose();
-        }
+    try {
+      await dispatch(status);
+      expect(JSON.parse(output).data.authenticated).toBe(true);
+      expect(probes).toBe(before);
+      expect(output).not.toContain("private-");
+    } finally {
+      await status.dispose();
+    }
 
-        const action = await create(
-          remove ? ["profile", "remove", "p", "--yes"] : ["auth", "logout"],
-        );
+    const action = await create(remove ? ["profile", "remove", "p", "--yes"] : ["auth", "logout"]);
 
-        try {
-          await expect(dispatch(action)).rejects.toMatchObject(
-            remove
-              ? {
-                  kind: "revocation",
-                  outcomes: { removed: true, revoked: false },
-                }
-              : { phase: "revocation" },
-          );
-
-          expect(probes).toBe(before + 1);
-          expect(mutations).toBe(0);
-
-          const key = accountKey("https://cleanup.test", "a");
-
-          const head = await state.read<{ generation: string }>(key + ".identity.json", {
-            generation: "missing",
-          });
-
-          expect(
-            await new Credentials(state).record(
-              credentialGenerationKey(key, head.generation),
-              "file",
-            ),
-          ).toMatchObject({ tokens: null });
-
-          if (remove) {
-            expect((await state.config()).profiles.p).toBeUndefined();
-          } else {
-            const restored = await create(["auth", "status"]);
-
-            try {
-              expect((await restored.session()).getSnapshot().status).toBe("signedOut");
-            } finally {
-              await restored.dispose();
+    try {
+      await expect(dispatch(action)).rejects.toMatchObject(
+        remove
+          ? {
+              kind: "revocation",
+              outcomes: { removed: true, revoked: false },
             }
-          }
+          : { phase: "revocation" },
+      );
 
-          expect(await new Credentials(state).get("p", "file")).toBeNull();
+      expect(probes).toBe(before + 1);
+      expect(mutations).toBe(0);
+
+      const key = accountKey("https://cleanup.test", "a");
+
+      const head = await state.read<{ generation: string }>(key + ".identity.json", {
+        generation: "missing",
+      });
+
+      expect(
+        await new Credentials(state).record(credentialGenerationKey(key, head.generation), "file"),
+      ).toMatchObject({ tokens: null });
+
+      if (remove) {
+        expect((await state.config()).profiles.p).toBeUndefined();
+      } else {
+        const restored = await create(["auth", "status"]);
+
+        try {
+          expect((await restored.session()).getSnapshot().status).toBe("signedOut");
         } finally {
-          await action.dispose();
-          await rm(directory, { recursive: true });
+          await restored.dispose();
         }
       }
+
+      expect(await new Credentials(state).get("p", "file")).toBeNull();
+    } finally {
+      await action.dispose();
+      await rm(directory, { recursive: true });
     }
   } finally {
     server.close();
