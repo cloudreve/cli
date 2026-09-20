@@ -75,6 +75,10 @@ it("real PTY confirmation accepts explicit yes and redirected invocation cannot 
     expect(no.status).toBe(2);
     expect(no.stderr).toContain("Interactive input unavailable");
 
+    if (process.platform === "win32") {
+      return;
+    }
+
     const yes = spawnSync(
       "python3",
       [

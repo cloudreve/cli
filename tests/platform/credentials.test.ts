@@ -7,6 +7,10 @@ import { State } from "../../src/platform/state.js";
 
 const launch = vi.hoisted(() => vi.fn());
 
+vi.mock("../../src/platform/private-permissions.js", () => ({
+  windowsPrivacy: vi.fn(async () => {}),
+}));
+
 vi.mock("node:child_process", () => ({ execFile: launch, fork: vi.fn() }));
 
 const tokens = {

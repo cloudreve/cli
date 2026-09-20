@@ -148,7 +148,7 @@ export async function destination(
 
   const handle = await open(
     temporary,
-    partial ? constants.O_RDWR | constants.O_APPEND | constants.O_NOFOLLOW : "wx",
+    partial ? constants.O_RDWR | constants.O_NOFOLLOW : "wx",
     0o600,
   );
 
@@ -177,7 +177,8 @@ export async function destination(
       let offset = 0;
 
       while (offset < bytes.length) {
-        const result = await handle.write(bytes, offset, bytes.length - offset);
+        // Explicit offsets let resumed files append and still truncate on Windows.
+        const result = await handle.write(bytes, offset, bytes.length - offset, size + offset);
 
         if (!result.bytesWritten) {
           throw new CliError("io", "Local write made no progress", 1);

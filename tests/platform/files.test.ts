@@ -62,6 +62,8 @@ it("writes atomically, refuses collision, preserves partial and resumes", async 
   const resumed = await destination(p, false, d.partial);
 
   expect(resumed.size()).toBe(2);
+  await resumed.append(new Uint8Array([3, 4]));
+  expect([...(await readFile(d.partial))]).toEqual([1, 2, 3, 4]);
   await resumed.reset();
   expect(resumed.size()).toBe(0);
   await resumed.append(new Uint8Array([9]));
