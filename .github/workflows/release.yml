@@ -1,0 +1,111 @@
+name: CLI release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Explicit stable version (for example 1.0.0)
+        type: string
+        default: ""
+      bump:
+        description: Version increment
+        type: choice
+        options: [none, patch, minor, major]
+        default: none
+permissions:
+  contents: read
+concurrency:
+  group: cli-release
+  cancel-in-progress: false
+jobs:
+  version:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      ref: ${{ steps.candidate.outputs.ref }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@v3
+        with:
+          version: 2026.9.11
+      - name: Resolve release version
+        id: version
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_BUMP: ${{ inputs.bump }}
+        run: |
+          mise exec -- node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import { releaseVersion } from './scripts/release-version.mjs';
+          const current = JSON.parse(fs.readFileSync('package.json')).version;
+          const version = releaseVersion(current, process.env.RELEASE_VERSION, process.env.RELEASE_BUMP);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`);
+          NODE
+      - name: Reject existing release or tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          test -z "$(git tag --list "v$VERSION")"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq '.[].tag_name' > /tmp/release-tags
+          if grep -Fxq "v$VERSION" /tmp/release-tags; then
+            echo "Release v$VERSION already exists" >&2
+            exit 1
+          fi
+      - name: Set release version
+        id: candidate
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mise exec -- node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const pkg = JSON.parse(fs.readFileSync('package.json'));
+          if (pkg.version !== process.env.VERSION) {
+            pkg.version = process.env.VERSION;
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+            fs.writeFileSync('src/version.ts', `export const version = ${JSON.stringify(pkg.version)};\n`);
+          }
+          NODE
+          if ! git diff --quiet -- package.json src/version.ts; then
+            mise exec -- bun install --lockfile-only --ignore-scripts
+            git add package.json src/version.ts bun.lock
+            git diff --cached --check
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git commit -m "chore(release): v$VERSION"
+            git push origin HEAD:master
+          fi
+          echo "ref=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  validate:
+    needs: version
+    uses: ./.github/workflows/check.yml
+    with:
+      ref: ${{ needs.version.outputs.ref }}
+  publish:
+    needs: [version, validate]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cli-binary-*
+          path: release
+          merge-multiple: true
+      - name: Publish verified binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.version.outputs.version }}
+          COMMIT: ${{ needs.version.outputs.ref }}
+        run: |
+          cd release
+          sha256sum --check ./*.sha256
+          cd ..
+          gh release create "v$VERSION" release/*.tar.gz release/*.sha256 \
+            --target "$COMMIT" --title "v$VERSION" \
+            --notes "Standalone Cloudreve CLI for Linux, macOS, and Windows. Archives include cloudreve-cli and cr; no separate Node.js or Bun installation is required."
