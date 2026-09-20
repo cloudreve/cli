@@ -9,7 +9,7 @@ import { scanLocalTree, assertLocalEntry } from "../../src/platform/local-tree.j
 vi.mock("node:fs/promises", async (original) => {
   const fs = await original<typeof FsPromises>();
 
-  return { ...fs, readdir: vi.fn(fs.readdir) };
+  return { ...fs, readdir: vi.fn(fs.readdir), lstat: vi.fn(fs.lstat) };
 });
 
 const roots: string[] = [];
@@ -155,9 +155,15 @@ it("rejects root replacement during enumeration", async () => {
   await expect(scanLocalTree(root)).rejects.toThrow("unchanged");
 });
 
-it("rejects root additions during scan and replacement before consumption", async () => {
+it("rejects root additions even before directory metadata changes", async () => {
   const root = await fixture();
-  const { readdir } = await import("node:fs/promises");
+  const { readdir, lstat } = await import("node:fs/promises");
+  const original = await vi.importActual<typeof FsPromises>("node:fs/promises");
+  const snapshot = await original.lstat(root);
+
+  vi.mocked(lstat).mockImplementation(async (...args: Parameters<typeof lstat>) =>
+    String(args[0]) === root ? snapshot : original.lstat(...args),
+  );
 
   vi.mocked(readdir).mockImplementationOnce(async () => {
     await writeFile(join(root, "late"), "not enumerated");
@@ -167,10 +173,30 @@ it("rejects root additions during scan and replacement before consumption", asyn
 
   await expect(scanLocalTree(root)).rejects.toThrow("unchanged");
 
+  vi.mocked(lstat).mockImplementation(original.lstat);
+
   const tree = await scanLocalTree(root);
 
   await rename(root, root + "-old");
   roots.push(root + "-old");
   await mkdir(root);
   await expect(assertLocalEntry(tree, tree.entries[0]!)).rejects.toThrow("unchanged");
+});
+
+it("rejects same-size directory renames after entries have been inspected", async () => {
+  const root = await fixture();
+  const { readdir } = await import("node:fs/promises");
+  const original = await vi.importActual<typeof FsPromises>("node:fs/promises");
+
+  await writeFile(join(root, "before"), "data");
+
+  vi.mocked(readdir).mockImplementationOnce((...args) => original.readdir(...args));
+
+  vi.mocked(readdir).mockImplementationOnce(async (...args) => {
+    await rename(join(root, "before"), join(root, "after"));
+
+    return original.readdir(...args);
+  });
+
+  await expect(scanLocalTree(root)).rejects.toThrow("unchanged");
 });

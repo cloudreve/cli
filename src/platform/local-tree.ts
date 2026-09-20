@@ -165,6 +165,14 @@ export async function scanLocalTree(
 
       await assertLocalEntry(tree, entry, signal);
     }
+
+    // Directory timestamps can lag behind membership changes on Windows.
+    const names = new Set(children.map((child) => child.name));
+    const current = await readdir(directory);
+
+    if (current.length !== names.size || current.some((name) => !names.has(name))) {
+      throw unsafe();
+    }
   }
 
   await walk(tree.root);
