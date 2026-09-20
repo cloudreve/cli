@@ -1,0 +1,112 @@
+name: CLI CI
+on:
+  push:
+  pull_request:
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        default: ""
+permissions:
+  contents: read
+jobs:
+  quality:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: jdx/mise-action@v3
+        with:
+          version: 2026.9.11
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: mise exec -- bun install --frozen-lockfile --ignore-scripts
+      - run: mise run check
+      - run: mise run package:check
+      - run: mise run release:build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-binary-${{ runner.os }}
+          include-hidden-files: true
+          path: .artifacts/release/*
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-coverage-${{ runner.os }}
+          path: coverage/coverage-summary.json
+          if-no-files-found: error
+  community:
+    needs: quality
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: 4.19.1
+            mode: structured
+          - version: 4.19.0
+            mode: structured
+          - version: 4.18.0
+            mode: structured
+          - version: 4.19.1
+            mode: human
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: jdx/mise-action@v3
+        with:
+          version: 2026.9.11
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: mise exec -- bun install --frozen-lockfile --ignore-scripts
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: playwright-${{ runner.os }}-
+      - name: Browser runtime
+        run: mise exec -- bun x playwright install --with-deps --only-shell chromium
+      - uses: actions/download-artifact@v4
+        with:
+          name: cli-binary-Linux
+          path: .artifacts/ci-binary
+      - name: Extract verified binary
+        run: |
+          cd .artifacts/ci-binary
+          sha256sum --check ./*.sha256
+          tar -xzf cloudreve-cli-*-linux-x64.tar.gz
+          chmod +x cloudreve-cli cr
+          echo "CR_CI_BINARY=$PWD/cloudreve-cli" >> "$GITHUB_ENV"
+          echo "CR_CI_RUN_ID=cli-ci-$(cat /proc/sys/kernel/random/uuid)" >> "$GITHUB_ENV"
+      - name: Community E2E
+        env:
+          CR_CI_VERSION: ${{ matrix.version }}
+          CR_CI_HUMAN: ${{ matrix.mode == 'human' && '1' || '0' }}
+        run: mise run test:e2e
+      - name: Remove owned fixture resources
+        if: always()
+        run: CR_CI_CLEANUP_PARENT=0 bash scripts/ci/cleanup.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: community-${{ matrix.version }}-${{ matrix.mode }}
+          include-hidden-files: true
+          path: .artifacts/ci/${{ matrix.version }}/**/acceptance.json
+          if-no-files-found: error
